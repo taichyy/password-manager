@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const LogoutPage = () => {
     const router = useRouter()
-    const { keyOfKeychains } = useKey();
+    const { keyOfKeychains, clearKeys } = useKey();
 
     const [isMounted, setIsMounted] = useState(false);
     const [showKeys, setShowKeys] = useState<boolean>(false);
@@ -49,6 +49,10 @@ const LogoutPage = () => {
             console.error("Error in function in DialogDoubleCheck: " + err)
             toast.error("發生錯誤，請稍後再試！")
         } finally {
+            // Wipe the derived vault key/salt from browser storage — the
+            // session cookie alone being cleared would leave the decryption
+            // key behind on this device.
+            clearKeys()
             router.push("/")
         }
     }

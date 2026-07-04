@@ -26,7 +26,10 @@ export const POST = async (request) => {
     const body = await request.json();
     const { username, password } = body;
 
-    if (!username || !password) {
+    // Generous upper bounds (looser than registration so legacy accounts still
+    // log in) purely to stop oversized payloads reaching bcrypt/HMAC.
+    if (!username || typeof username !== "string" || username.length > 256 ||
+        !password || typeof password !== "string" || password.length > 1024) {
         setStatus(400);
         setResponse({
             status: false,
@@ -73,8 +76,10 @@ export const POST = async (request) => {
         const decryptedEmail = user.email ? decryptPII(user.email) : "";
         const decryptedUsername = decryptPII(user.usernameEncrypted);
 
-        // Reset tokenValidAfter so the newly issued token will always pass validation
-        await User.findByIdAndUpdate(user._id, { tokenValidAfter: new Date(0) });
+        // NOTE: tokenValidAfter is deliberately NOT reset here. Resetting it to
+        // epoch would re-validate every previously revoked (e.g. stolen) token.
+        // A freshly signed token always has iat >= tokenValidAfter because
+        // revocation timestamps are floored to whole seconds (JWT iat precision).
 
         const token = sign(
             {
@@ -134,7 +139,11 @@ export async function DELETE(request) {
         try {
             const userId = await getUserId();
 
-            await User.findByIdAndUpdate(userId, { tokenValidAfter: new Date() });
+            // Floored to whole seconds: JWT iat only has second precision, so a
+            // ms-precision cutoff would reject tokens issued in the same second.
+            await User.findByIdAndUpdate(userId, {
+                tokenValidAfter: new Date(Math.floor(Date.now() / 1000) * 1000),
+            });
         } catch (error) {
             console.error("[LOGOUT_ERROR]", error);
             // Even if token verification fails, we still want to clear the cookie

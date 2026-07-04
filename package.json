@@ -52,6 +52,9 @@
     "tailwindcss-animate": "^1.0.7",
     "zustand": "^5.0.4"
   },
+  "overrides": {
+    "postcss": "$postcss"
+  },
   "devDependencies": {
     "@types/aos": "^3.0.7",
     "@types/crypto-js": "^4.2.2",

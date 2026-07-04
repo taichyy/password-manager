@@ -48,18 +48,20 @@ export const POST = async (request) => {
     if (method === "get") {
         // GET /api/accounts?method=get => get all accounts
         try {
-            // Labels for filtering.
+            // Labels for filtering. Coerced to plain strings so client input
+            // can't smuggle MongoDB query operators into the filter.
             const { labels, keychainId } = body || {}
+            const labelFilter = Array.isArray(labels) ? labels.map(String) : []
 
             await connect()
-    
+
             const query = { userId };
 
-            if (labels.length > 0) {
-                query.label = { $in: labels };
+            if (labelFilter.length > 0) {
+                query.label = { $in: labelFilter };
             }
             if (keychainId) {
-                query.keychainId = keychainId;
+                query.keychainId = String(keychainId);
             } else {
                 // Null, isn't null, but default key chain
                 query.keychainId = null; 
@@ -99,15 +101,17 @@ export const POST = async (request) => {
     } else if (!method) {
         // 支援單筆與批量新增
         // 單筆: body 為物件，批量: body 為陣列
-        let accounts = [];
-        if (Array.isArray(body)) {
-            // 批量
-            accounts = body.map(acc => ({ ...acc, userId }));
-        } else {
-            // 單筆
-            const { title, username, password, remark, label, keychainId, linkedAccountId } = body || {};
-            accounts = [{ title, username, password, remark, userId, label, keychainId, linkedAccountId: linkedAccountId || null }];
-        }
+        // Only whitelisted fields are taken from the client. Spreading the raw
+        // body would let a caller set trusted fields like type ("validation"
+        // bypasses plan limits and locks the record against edits) or _id.
+        const pickAccountFields = (acc) => {
+            const { title, username, password, remark, label, keychainId, linkedAccountId } = acc || {};
+            return { title, username, password, remark, userId, label, keychainId, linkedAccountId: linkedAccountId || null };
+        };
+
+        const accounts = Array.isArray(body)
+            ? body.map(pickAccountFields)
+            : [pickAccountFields(body)];
 
         // ----- Plan limit check (user role only)
         // Group incoming accounts by keychainId (null => default keychain).

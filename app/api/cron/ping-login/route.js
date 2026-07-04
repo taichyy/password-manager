@@ -1,9 +1,20 @@
+import { timingSafeEqual } from "crypto";
+
 // Vercel cron job: keeps the app warm by hitting the login endpoint every 29 days.
 // Schedule is defined in vercel.json.
 export const GET = async (request) => {
-    // Verify the request comes from Vercel's cron scheduler
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Verify the request comes from Vercel's cron scheduler. Fail closed when
+    // CRON_SECRET is unset — otherwise "Bearer undefined" would authenticate.
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get("authorization") || "";
+    const expected = Buffer.from(`Bearer ${cronSecret}`);
+    const provided = Buffer.from(authHeader);
+    const authorized =
+        !!cronSecret &&
+        expected.length === provided.length &&
+        timingSafeEqual(expected, provided);
+
+    if (!authorized) {
         return new Response(JSON.stringify({ status: false, message: "Unauthorized" }), {
             status: 401,
             headers: { "Content-Type": "application/json" },

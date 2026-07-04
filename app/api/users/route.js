@@ -24,14 +24,16 @@ export const POST = async (request) => {
     const { username, password, email } = body;
 
     // ----- Input validation
-    if (!username || typeof username !== "string" || username.trim().length < 2) {
+    if (!username || typeof username !== "string" || username.trim().length < 2 || username.length > 64) {
         setStatus(400);
-        setResponse({ status: false, type: "validation", message: "Username must be at least 2 characters." });
+        setResponse({ status: false, type: "validation", message: "Username must be 2-64 characters." });
         return getResponse();
     }
-    if (!password || typeof password !== "string" || password.length < 8) {
+    // Upper bound matches bcrypt's 72-byte input limit — anything longer would
+    // be silently truncated, giving users a false sense of a stronger password.
+    if (!password || typeof password !== "string" || password.length < 8 || Buffer.byteLength(password, "utf8") > 72) {
         setStatus(400);
-        setResponse({ status: false, type: "validation", message: "Password must be at least 8 characters." });
+        setResponse({ status: false, type: "validation", message: "Password must be 8-72 characters." });
         return getResponse();
     }
     if (email !== undefined && email !== "" && !EMAIL_RE.test(String(email))) {

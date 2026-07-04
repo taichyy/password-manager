@@ -47,8 +47,11 @@ const userSchema = new Schema({
     },
     tokenValidAfter: {
         type: Date,
-        default: () => new Date(),
-    },  
+        // Floored to whole seconds — JWT iat has second precision, so a
+        // ms-precision default would invalidate the token signed right after
+        // registration within the same second.
+        default: () => new Date(Math.floor(Date.now() / 1000) * 1000),
+    },
     createdAt: {
         type: Date,
         default: () => new Date(),

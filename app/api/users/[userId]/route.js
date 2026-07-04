@@ -133,7 +133,20 @@ export const PATCH = async (request, props) => {
     if (body.email !== undefined) {
         const jwtSecret = requireEnv("JWT_SECRET");
 
+        if (typeof body.email !== "string") {
+            setStatus(400);
+            setResponse({ status: false, type: "validation", message: "Invalid email format." });
+            return getResponse();
+        }
+
         const newEmail = body.email.trim().toLowerCase();
+
+        // Same format rule as registration; empty string clears the email.
+        if (newEmail !== "" && !EMAIL_RE.test(newEmail)) {
+            setStatus(400);
+            setResponse({ status: false, type: "validation", message: "Invalid email format." });
+            return getResponse();
+        }
 
         // Encrypt and store new email (authenticated AES-GCM).
         updateData.email = encryptPII(newEmail);

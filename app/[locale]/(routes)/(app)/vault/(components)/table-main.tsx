@@ -542,7 +542,7 @@ const TableMain = ({
     children?: React.ReactNode
 }) => {
     const router = useRouter()
-    const { key } = useKey()
+    const { key, clearKeys } = useKey()
 
     const { hide, setHide } = useHideStore()
 
@@ -576,6 +576,9 @@ const TableMain = ({
         } catch (error) {
             console.error("Logout error when user key is empty at vault table-main:", error);
         }
+
+        // Wipe the derived vault key/salt from browser storage on forced logout.
+        clearKeys()
 
         // Let the middleware handle the redirect.
         router.refresh()

@@ -34,6 +34,16 @@ export const GET = async (request, props) => {
 
         const account = await Account.findById(accountId)
 
+        if (!account) {
+            setStatus(404)
+            setResponse({
+                status: false,
+                type: "error",
+                message: "Account not found.",
+            })
+            return getResponse()
+        }
+
         const { title, username, password, label, remark, userId, linkedAccountId, keychainId } = account
 
         if (userId != loginedUserId) {

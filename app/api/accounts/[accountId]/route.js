@@ -110,15 +110,26 @@ export const PUT = async (request, props) => {
         
         const body = await request.json()
 
-        const { title, username, password, label, remark, userId, linkedAccountId } = body || {}
+        const { title, username, password, label, remark, linkedAccountId } = body || {}
 
         // From utils/db.js
         await connect()
 
         const findAccount = await Account.findById(accountId)
 
+        if (!findAccount) {
+            setStatus(404)
+            setResponse({
+                status: false,
+                type: "error",
+                message: "Account not found.",
+            })
+
+            return getResponse()
+        }
+
          // If it's a regular PUT req.
-        if (mode == "account") {            
+        if (mode == "account") {
             data = {
                 title,
                 username,
@@ -145,7 +156,9 @@ export const PUT = async (request, props) => {
             return getResponse()
         }
 
-        if (userId != loginedUserId) {
+        // Ownership must be checked against the record's actual owner, not a
+        // client-supplied field, otherwise a caller can just claim any userId.
+        if (findAccount.userId != loginedUserId) {
             setStatus(403)
             setResponse({
                 status: false,
@@ -212,11 +225,35 @@ export const DELETE = async (request, props) => {
 
 
     const params = await props.params;
+    const loginedUserId = await getUserId()
     const { accountId } = params
 
     // Fetch
     try {
         await connect()
+
+        const findAccount = await Account.findById(accountId)
+
+        if (!findAccount) {
+            setStatus(404)
+            setResponse({
+                status: false,
+                type: "error",
+                message: "Account not found.",
+            })
+            return getResponse()
+        }
+
+        if (findAccount.userId != loginedUserId) {
+            setStatus(403)
+            setResponse({
+                status: false,
+                type: "error",
+                message: "You are not authorized to access this account.",
+            })
+            return getResponse()
+        }
+
         await Account.findByIdAndDelete(accountId)
 
         setStatus(200)

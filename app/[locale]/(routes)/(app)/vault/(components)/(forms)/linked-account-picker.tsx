@@ -3,10 +3,11 @@
 import { Link2, X, Search } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
-import { poster, AESDecrypt } from "@/lib/utils"
+import { poster } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { decrypt } from "@/lib/vault-crypto"
 import { useKey } from "@/components/providers/provider-key"
 
 export type TLinkedOption = {
@@ -100,9 +101,9 @@ const LinkedAccountPicker = ({
                     try {
                         collected.push({
                             _id: item._id,
-                            title: AESDecrypt(item.title, t.decryptKey),
-                            username: AESDecrypt(item.username, t.decryptKey),
-                            password: AESDecrypt(item.password, t.decryptKey),
+                            title: await decrypt(item.title, t.decryptKey),
+                            username: await decrypt(item.username, t.decryptKey),
+                            password: await decrypt(item.password, t.decryptKey),
                             keychainId: t.keychainId,
                             keychainLabel: t.label,
                         })

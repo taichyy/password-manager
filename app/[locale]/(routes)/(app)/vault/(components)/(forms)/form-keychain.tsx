@@ -7,6 +7,7 @@ import { Check, Eye, EyeOffIcon } from "lucide-react";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 
 import { Button } from "@/components/ui/button";
+import { encryptRecord } from "@/lib/vault-crypto";
 import ControlledInput from "@/components/controlled-input";
 import { useKey } from "@/components/providers/provider-key";
 import { deriveRawKey, generateUserPrivateKey } from "@/lib/utils";
@@ -171,18 +172,25 @@ const FormKeychain = ({
         const name = (form.elements.namedItem("name") as HTMLInputElement).value
 
         const derivedKey = await deriveRawKey(userKey, salt)
- 
+
         if (!derivedKey) {
             toast.error("創建失敗，請重新登入，若問題持續存在，請聯繫管理員。");
             return;
         }
-        
+
+        // Encrypt the keychain's validation record client-side so the derived
+        // key never leaves the browser. The server stores it as-is.
+        const validationRecord = await encryptRecord(
+            { type: "validation", title: "validation", username: "validation", password: "validation" },
+            derivedKey,
+        )
+
         try {
             const req = await fetch(url, {
                 method,
                 body: JSON.stringify({
                     name,
-                    derivedKey,
+                    validationRecord,
                 })
             })
             const res = await req.json().catch(() => ({}))

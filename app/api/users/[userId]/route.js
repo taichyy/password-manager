@@ -1,11 +1,12 @@
-import CryptoJS from "crypto-js";
 import { verify, sign } from "jsonwebtoken";
 import { cookies } from "next/headers";
 
 import connect from "@/lib/db"
 import User from "@/models/User"
 import { Response, MAX_AGE } from "@/lib/utils"
+import { requireEnv } from "@/lib/env"
 import { getUserId, apiProtect } from "@/lib/actions"
+import { encryptPII, decryptPII } from "@/lib/crypto-server"
 
 export const GET = async (request, props) => {
     // ----- General api check.
@@ -28,8 +29,6 @@ export const GET = async (request, props) => {
 
     const params = await props.params;
     const { userId } = params
-    const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type');
 
     const loginedUserId = await getUserId()
 
@@ -41,84 +40,44 @@ export const GET = async (request, props) => {
             message: "You are not authorized to access this user.",
         })
     } else {
-        if (type === 'email-check') {
-            try {
-                await connect();
-                const user = await User.findById(userId);
-                
-                if (!user) {
-                    setStatus(404);
-                    setResponse({
-                        status: false,
-                        message: "用戶不存在",
-                    });
-                    return getResponse();
-                }
-                
-                const cookieStore = await cookies();
-                const token = cookieStore.get("token")?.value;
-        
-                if (!token) {
-                    setStatus(401);
-                    setResponse({
-                        status: false,
-                        message: "未登入",
-                    });
-                    return getResponse();
-                }
-        
-                const jwtSecret = process.env.JWT_SECRET || "";
-                const decoded = verify(token, jwtSecret);
+        try {
+            await connect()
+            const user = await User.findById(userId)
 
-                setStatus(200);
+            if (!user) {
+                setStatus(404)
+                setResponse({
+                    status: false,
+                    type: "user",
+                    message: "User not found.",
+                })
+            } else {
+                // Project only safe display fields. Never expose the password
+                // hash, salt, usernameHash, or raw encrypted PII blobs.
+                setStatus(200)
                 setResponse({
                     status: true,
+                    type: "success",
+                    message: "User found.",
                     data: {
-                        emailVerified: !!user.emailVerified,
-                        email: decoded.email,
+                        _id: user._id,
+                        username: decryptPII(user.usernameEncrypted),
+                        email: user.email ? decryptPII(user.email) : "",
+                        role: user.role,
+                        provider: user.provider,
+                        createdAt: user.createdAt,
                     },
-                });
-
-            } catch (err) {
-                console.error("Error checking user email verified status", err);
-
-                setStatus(500);
-                setResponse({
-                    status: false,
-                    message: "User email verification check failed.",
-                });
-            }
-        } else {
-            try {
-                await connect()
-                const user = await User.findById(userId)
-
-                if (!user) {
-                    setStatus(404)
-                    setResponse({
-                        status: false,
-                        type: "user",
-                        message: "User not found.",
-                    })
-                } else {
-                    setStatus(200)
-                    setResponse({
-                        status: true,
-                        type: "success",
-                        message: "User found.",
-                        data: user,
-                    })
-                }
-            } catch (err) {
-                console.error("Error fetching User record:", err);
-
-                setStatus(500)
-                setResponse({
-                    status: false,
-                    type: "error",
-                    message: "User fetch failed.",
                 })
             }
+        } catch (err) {
+            console.error("Error fetching User record:", err);
+
+            setStatus(500)
+            setResponse({
+                status: false,
+                type: "error",
+                message: "User fetch failed.",
+            })
         }
     }
 
@@ -147,6 +106,18 @@ export const PATCH = async (request, props) => {
     const params = await props.params;
     const { userId } = params
 
+    const loginedUserId = await getUserId()
+
+    if (loginedUserId !== userId) {
+        setStatus(403)
+        setResponse({
+            status: false,
+            type: "user",
+            message: "You are not authorized to access this user.",
+        })
+        return getResponse();
+    }
+
     const body = await request.json()
 
     // Construct a dynamic update object
@@ -160,14 +131,12 @@ export const PATCH = async (request, props) => {
 
     // Handle email update
     if (body.email !== undefined) {
-        const secret = process.env.USER_SECRET || "";
-        const jwtSecret = process.env.JWT_SECRET || "";
+        const jwtSecret = requireEnv("JWT_SECRET");
 
         const newEmail = body.email.trim().toLowerCase();
 
-        // Encrypt and store new email, reset verification status
-        updateData.email = CryptoJS.AES.encrypt(newEmail, secret).toString();
-        updateData.emailVerified = null;
+        // Encrypt and store new email (authenticated AES-GCM).
+        updateData.email = encryptPII(newEmail);
 
         // Fetch current user data to rebuild JWT payload
         await connect();

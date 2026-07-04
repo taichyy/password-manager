@@ -3,6 +3,16 @@ const createNextIntlPlugin = require('next-intl/plugin');
 
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
+// Conservative, non-breaking security headers. (A strict script-src CSP is a
+// recommended follow-up but needs in-browser tuning against Lottie/AOS/analytics.)
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+];
+
 const nextConfig = {
   turbopack: {
     resolveAlias: {
@@ -11,6 +21,14 @@ const nextConfig = {
       "@/lib": "./lib",
       // 看你專案結構再加
     },
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
+      },
+    ];
   },
 };
 

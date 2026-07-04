@@ -6,23 +6,52 @@ import { cookies } from "next/headers"
 import connect from "@/lib/db"
 import User from "@/models/User"
 import { Response, MAX_AGE } from "@/lib/utils"
+import { requireEnv } from "@/lib/env"
+import { checkRateLimit } from "@/lib/rate-limit"
+import { hashUsername, encryptPII } from "@/lib/crypto-server"
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Create a new user.
 export const POST = async (request) => {
     await connect();
 
-    const jwtSecret = process.env.JWT_SECRET || "";
-    const secret = process.env.USER_SECRET || "";
+    const jwtSecret = requireEnv("JWT_SECRET");
 
     const { setStatus, setResponse, getResponse } = Response()
 
     const body = await request.json();
     const { username, password, email } = body;
 
-    // 加密 username 與 email
-    const encryptedEmail = CryptoJS.AES.encrypt(email, secret).toString();
-    const encryptedUsername = CryptoJS.AES.encrypt(username, secret).toString();
-    const usernameHash = CryptoJS.SHA256(username, secret).toString();
+    // ----- Input validation
+    if (!username || typeof username !== "string" || username.trim().length < 2) {
+        setStatus(400);
+        setResponse({ status: false, type: "validation", message: "Username must be at least 2 characters." });
+        return getResponse();
+    }
+    if (!password || typeof password !== "string" || password.length < 8) {
+        setStatus(400);
+        setResponse({ status: false, type: "validation", message: "Password must be at least 8 characters." });
+        return getResponse();
+    }
+    if (email !== undefined && email !== "" && !EMAIL_RE.test(String(email))) {
+        setStatus(400);
+        setResponse({ status: false, type: "validation", message: "Invalid email format." });
+        return getResponse();
+    }
+
+    // Rate limit registrations per client IP.
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const limited = await checkRateLimit(`register:${ip}`, 10, 60 * 60 * 1000);
+    if (limited) {
+        setStatus(429);
+        setResponse({ status: false, type: "rate_limit", message: "Too many attempts. Please try again later." });
+        return getResponse();
+    }
+
+    const usernameHash = hashUsername(username);
+    const encryptedUsername = encryptPII(username);
+    const encryptedEmail = email ? encryptPII(email) : "";
     const passwordHash = await bcrypt.hash(password, 12);
 
     const newUserSalt = CryptoJS.lib.WordArray.random(16).toString();
@@ -46,7 +75,6 @@ export const POST = async (request) => {
             usernameHash,
             password: passwordHash,
             email: encryptedEmail,
-            secondFAPassword: passwordHash,
             salt: newUserSalt,
             role: "user",
         });
@@ -57,7 +85,7 @@ export const POST = async (request) => {
             {
                 userId: savedUser._id,
                 username,
-                email,
+                email: email || "",
                 role: savedUser.role,
             },
             jwtSecret,
@@ -82,7 +110,7 @@ export const POST = async (request) => {
         })
     } catch (error) {
         console.error("[REGISTER_ERROR]", error);
-        
+
         setStatus(500);
         setResponse({
             status: false,

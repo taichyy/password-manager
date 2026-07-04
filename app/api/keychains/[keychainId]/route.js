@@ -76,11 +76,36 @@ export const DELETE = async (request, props) => {
             return getResponse();
         }
 
+        // Ownership check: the keychain must belong to the caller, not just
+        // any keychainId the caller happens to know.
+        const targetKeychain = await Keychain.findById(keychainId);
+
+        if (!targetKeychain) {
+            setStatus(404)
+            setResponse({
+                status: false,
+                type: "keychain",
+                message: "Keychain not found.",
+            })
+            return getResponse();
+        }
+
+        if (targetKeychain.userId != loginedUserId) {
+            setStatus(403)
+            setResponse({
+                status: false,
+                type: "error",
+                message: "You are not authorized to access this keychain.",
+            })
+            return getResponse();
+        }
+
         // Everything is fine, start to delete the keychain
         session.startTransaction();
 
-        // Delete all the account records associated with the keychain
-        await Account.deleteMany({ keychainId }, { session });
+        // Delete all the account records associated with the keychain, scoped
+        // to the owner so it can't cascade into another user's data.
+        await Account.deleteMany({ keychainId, userId: loginedUserId }, { session });
         const keychain = await Keychain.findByIdAndDelete(keychainId, { session });
 
         if (!keychain) {

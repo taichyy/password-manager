@@ -1,7 +1,7 @@
 import connect from "@/lib/db"
 import Label from "@/models/Label"
 import { Response } from "@/lib/utils"
-import { apiProtect } from "@/lib/actions"
+import { getUserRole, apiProtect } from "@/lib/actions"
 
 export const DELETE = async (request, props) => {
     // ----- General api check.
@@ -18,6 +18,18 @@ export const DELETE = async (request, props) => {
         setResponse({
             status: false,
             message: "Access denied.",
+        })
+        return getResponse();
+    }
+
+    // Labels are a shared/global taxonomy — only admins may mutate them,
+    // matching the admin gate on label creation.
+    if ((await getUserRole()) !== "admin") {
+        setStatus(403)
+        setResponse({
+            status: false,
+            type: "unauthorized",
+            message: "Permission denied.",
         })
         return getResponse();
     }
@@ -66,6 +78,16 @@ export const PUT = async (request, props) => {
         setResponse({
             status: false,
             message: "Access denied.",
+        })
+        return getResponse();
+    }
+
+    if ((await getUserRole()) !== "admin") {
+        setStatus(403)
+        setResponse({
+            status: false,
+            type: "unauthorized",
+            message: "Permission denied.",
         })
         return getResponse();
     }

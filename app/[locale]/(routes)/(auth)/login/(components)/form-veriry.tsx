@@ -79,7 +79,7 @@ export default function FormVerify({
             })
 
             const res = await req.json()
-            const { status, type, data } = res || {}
+            const { status, type, data, message } = res || {}
             const { salt } = data || {}
 
             if (status) {
@@ -103,18 +103,17 @@ export default function FormVerify({
                 }
             } else {
                 let msg = ""
-                if (formMode == "register") {
-                    if (type == "database") {
-                        msg = "註冊失敗，請稍後再試"
-                    } else {
-                        msg = "註冊失敗，請稍後再試"
-                    }
-                } else if (formMode == "login") {
-                    if (type == "password") {
-                        msg = "密碼錯誤"
-                    } else if (type == "user") {
-                        msg = "使用者不存在"
-                    }
+                if (type == "rate_limit") {
+                    msg = "嘗試次數過多，請稍後再試"
+                } else if (type == "validation") {
+                    // Surface the server-side validation reason directly.
+                    msg = message || (formMode == "register" ? "註冊失敗，請稍後再試" : "登入失敗")
+                } else if (formMode == "register") {
+                    msg = "註冊失敗，請稍後再試"
+                } else {
+                    // Login: a single generic message for both wrong username and
+                    // wrong password, so the form can't be used to enumerate users.
+                    msg = "帳號或密碼錯誤"
                 }
 
                 toast.error(msg)
@@ -140,7 +139,6 @@ export default function FormVerify({
                     {formMode == "register" && (
                         <UncontrolledInput
                             label="電子信箱"
-                            remark="將會進行信箱驗證，請務必填寫真實信箱"
                             id="email"
                             type="email"
                         />

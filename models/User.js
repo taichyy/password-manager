@@ -18,9 +18,6 @@ const userSchema = new Schema({
         type: String,
         required: false,
     },
-    emailVerified: {
-        type: Date,
-    },
     // Hashed password
     password: {
         type: String,

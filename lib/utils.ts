@@ -1,4 +1,3 @@
-import CryptoJS from "crypto-js"
 import { twMerge } from "tailwind-merge"
 import { NextResponse } from "next/server";
 import { type ClassValue, clsx } from "clsx"
@@ -80,15 +79,6 @@ export const poster = async (
 
     return response.json();
 };
-
-export const AESDecrypt = (encryptedData: string | null, key: string) => {
-    try {
-        return encryptedData && key ? CryptoJS.AES.decrypt(encryptedData, key).toString(CryptoJS.enc.Utf8) : ""
-    } catch (error) {
-        console.error("Decryption error:", error);
-        return "";
-    }
-}
 
 export async function deriveRawKey(password: string, salt: string): Promise<string> {
     const encoder = new TextEncoder();

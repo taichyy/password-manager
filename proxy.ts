@@ -4,9 +4,10 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { routing } from "@/i18n/routing";
+import { requireEnv } from "@/lib/env";
 
 const handleI18nRouting = createMiddleware(routing);
-const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || "");
+const jwtSecret = new TextEncoder().encode(requireEnv("JWT_SECRET"));
 
 export default async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;

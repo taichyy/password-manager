@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 
 import connect from "@/lib/db";
 import Label from "@/models/Label";
+import { requireEnv } from "@/lib/env";
 import LogoText from "@/components/logo-text";
 import { TJWTPayload, TLabel } from "@/lib/types";
 import TableMain from "./(components)/table-main";
@@ -17,8 +18,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { LanguageToggle } from "@/components/language-toggle";
 
 const VaultPage = async () => {
-    // Always check this
-    const jwtSecret = process.env.JWT_SECRET || "";
+    const jwtSecret = requireEnv("JWT_SECRET");
 
     const token = (await cookies()).get("token")?.value
     const decoded = await jwtVerify(token || "", new TextEncoder().encode(jwtSecret))

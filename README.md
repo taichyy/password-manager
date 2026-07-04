@@ -6,7 +6,6 @@ A simple, user-friendly password manager built with Next.js and MongoDB.
 
 - Secure credential storage with encryption.
 - JWT-based authentication and session management.
-- Email verification support using Nodemailer.
 - Modern UI built with Tailwind CSS and Radix UI.
 
 ## 🛠️ Technologies Used
@@ -14,7 +13,6 @@ A simple, user-friendly password manager built with Next.js and MongoDB.
 - Next.js
 - MongoDB / Mongoose
 - JWT
-- Nodemailer
 - Tailwind CSS
 - React
 
@@ -22,7 +20,6 @@ A simple, user-friendly password manager built with Next.js and MongoDB.
 
 - Node.js 18+ or later
 - MongoDB database / Atlas cluster
-- A valid email account for sending verification emails
 
 ## 🔧 Environment Variables
 
@@ -43,20 +40,14 @@ USER_SECRET=
 
 # Secret for signing JWT tokens
 JWT_SECRET=
-
-# Email account used by Nodemailer
-EMAIL_FROM=
-EMAIL_PASS=
 ```
 
 ### Notes
 
 - `NEXT_PUBLIC_ENV` should be either `PROD` or `DEV`.
-- `NEXT_PUBLIC_API_URL` is used to build API callback URLs for email verification. Do not include a trailing `/`.
+- `NEXT_PUBLIC_API_URL` is used to build internal API callback URLs. Do not include a trailing `/`.
 - `USER_SECRET` is used to encrypt/decrypt stored user credentials.
 - `JWT_SECRET` is used to sign and verify JWT tokens.
-- `EMAIL_FROM` and `EMAIL_PASS` are used by Nodemailer to send verification and notification emails.
-- If you use Gmail, generate an app password and use that value for `EMAIL_PASS`.
 
 ## 🚀 Run Locally
 

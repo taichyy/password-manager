@@ -2,9 +2,8 @@
 
 import axios from "axios"
 import useSWR from "swr"
-import CryptoJS from "crypto-js"
 import toast from "react-hot-toast"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react"
 
 import {
@@ -14,20 +13,16 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog"
+import { poster } from "@/lib/utils"
 import { TNote } from "@/lib/types"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { AESDecrypt, poster } from "@/lib/utils"
+import { encrypt, decrypt } from "@/lib/vault-crypto"
 import { Separator } from "@/components/ui/separator"
 import { useKey } from "@/components/providers/provider-key"
 import DialogDoubleCheck from "@/components/dialog-double-check"
 import { useDoubleCheckStore } from "@/lib/stores/use-double-check-store"
-
-const aesEncrypt = (plain: string, key: string) => {
-    if (!plain) return ""
-    return CryptoJS.AES.encrypt(plain, key).toString()
-}
 
 type TAPINotes = {
     status: boolean
@@ -183,22 +178,29 @@ const NotesPanel = () => {
         { dedupingInterval: 30000, revalidateOnFocus: false }
     )
 
-    // Decrypt fetched notes with the user's derived key
-    const decryptedNotes: TNote[] = useMemo(() => {
-        if (!fetched?.data || !key) return []
-        return fetched.data.map((n) => ({
-            _id: n._id,
-            order: n.order,
-            title: AESDecrypt(n.title || "", key),
-            context: AESDecrypt(n.context || "", key),
-        }))
-    }, [fetched, key])
-
-    // Local ordered copy so drag operations are immediate
+    // Local ordered copy so drag operations are immediate. Decryption is async
+    // (WebCrypto), so we decrypt in an effect and store the result.
     const [items, setItems] = useState<TNote[]>([])
     useEffect(() => {
-        setItems(decryptedNotes)
-    }, [decryptedNotes])
+        let cancelled = false
+        const run = async () => {
+            if (!fetched?.data || !key) {
+                if (!cancelled) setItems([])
+                return
+            }
+            const decrypted = await Promise.all(
+                fetched.data.map(async (n) => ({
+                    _id: n._id,
+                    order: n.order,
+                    title: await decrypt(n.title || "", key),
+                    context: await decrypt(n.context || "", key),
+                }))
+            )
+            if (!cancelled) setItems(decrypted)
+        }
+        run()
+        return () => { cancelled = true }
+    }, [fetched, key])
 
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<TNote | null>(null)
@@ -262,8 +264,8 @@ const NotesPanel = () => {
         }
         try {
             await axios.post("/api/notes", {
-                title: aesEncrypt(title, key),
-                context: aesEncrypt(context, key),
+                title: await encrypt(title, key),
+                context: await encrypt(context, key),
             })
             toast.success("新增成功")
             setAdding(false)
@@ -281,8 +283,8 @@ const NotesPanel = () => {
         }
         try {
             await axios.put(`/api/notes/${editing._id}`, {
-                title: aesEncrypt(title, key),
-                context: aesEncrypt(context, key),
+                title: await encrypt(title, key),
+                context: await encrypt(context, key),
             })
             toast.success("已更新")
             setEditing(null)

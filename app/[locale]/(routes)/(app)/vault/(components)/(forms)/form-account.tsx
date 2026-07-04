@@ -5,12 +5,12 @@ import { toast } from "react-hot-toast";
 import useSWR, { KeyedMutator } from "swr";
 import { useState, useEffect, FormEvent } from "react";
 
-import { cn } from "@/lib/utils";
+import { cn, fetcher } from "@/lib/utils";
 import { TLabel } from "@/lib/types";
+import { getUserId } from "@/lib/actions";
 import LabelsSelector from "../labels-selector";
 import { Button } from "@/components/ui/button";
-import { AESDecrypt, fetcher } from "@/lib/utils";
-import { encryptRecord, getUserId } from "@/lib/actions";
+import { decrypt, encryptRecord } from "@/lib/vault-crypto";
 import ControlledInput from "@/components/controlled-input";
 import { useKey } from "@/components/providers/provider-key";
 import DialogDoubleCheck from "@/components/dialog-double-check";
@@ -118,22 +118,29 @@ const FormAccount = ({
         }
     }, [opened]);
 
-    // Populate form only when we have fresh data from the network
+    // Populate form only when we have fresh data from the network.
+    // Decryption is async (WebCrypto), so we resolve all fields then set state.
     useEffect(() => {
-        if (data && isEdit && insertedKeyVal && !isLoading) {
-            setSearchKeys(data.label || []);
-            const linked = data.linkedAccountId || null;
-            setLinkedAccountId(linked);
-            setMode(linked ? "external" : "credentials");
-            setFormData({
-                title: AESDecrypt(data.title, insertedKeyVal),
-                username: AESDecrypt(data.username, insertedKeyVal),
-                password: AESDecrypt(data.password, insertedKeyVal),
-                remark: AESDecrypt(data.remark, insertedKeyVal),
-                label: data.label || [],
-            });
-            setDataReady(true);
-        }
+        let cancelled = false
+        const run = async () => {
+            if (data && isEdit && insertedKeyVal && !isLoading) {
+                setSearchKeys(data.label || []);
+                const linked = data.linkedAccountId || null;
+                setLinkedAccountId(linked);
+                setMode(linked ? "external" : "credentials");
+                const [title, username, password, remark] = await Promise.all([
+                    decrypt(data.title, insertedKeyVal),
+                    decrypt(data.username, insertedKeyVal),
+                    decrypt(data.password, insertedKeyVal),
+                    decrypt(data.remark, insertedKeyVal),
+                ]);
+                if (cancelled) return;
+                setFormData({ title, username, password, remark, label: data.label || [] });
+                setDataReady(true);
+            }
+        };
+        run();
+        return () => { cancelled = true };
     }, [data, isLoading, id]);
 
     // Handle form input changes

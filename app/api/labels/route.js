@@ -1,10 +1,7 @@
-import { jwtVerify } from "jose"
-import { cookies } from "next/headers"
-
 import connect from "@/lib/db"
 import Label from "@/models/Label"
 import { Response } from "@/lib/utils"
-import { apiProtect } from "@/lib/actions"
+import { getUserId, getUserRole, apiProtect } from "@/lib/actions"
 
 export const POST = async (request) => {
     // ----- General api check.
@@ -28,14 +25,9 @@ export const POST = async (request) => {
     // POST /api/labels => create a new label
     // POST /api/labels?method=get => get all labels
 
-    // Always check this
-    const jwtSecret = process.env.JWT_SECRET || "";
-
-    // Parse userId from token, or by Bearer header
-    const token = (await cookies()).get("token")?.value || request.headers.get("Authorization")?.split(" ")[1]
-    const decoded = await jwtVerify(token, new TextEncoder().encode(jwtSecret))
-    const userId = decoded.payload.userId
-    const role = decoded.payload.role
+    // Authoritative identity/role from the DB (not the JWT claim).
+    const userId = await getUserId()
+    const role = await getUserRole()
 
     const url = new URL(request.url)
     const method = url.searchParams.get("method")
@@ -46,7 +38,7 @@ export const POST = async (request) => {
         // GET /api/labels?method=get => get all labels
         try {
             await connect()
-    
+
             const labels = await Label.find(type == "custom" ? { userId } : {});
 
             setStatus(200)
@@ -77,25 +69,24 @@ export const POST = async (request) => {
             })
         } else {
             // POST /api/labels => create a new label
-            // This is encrypted data, by user at client.
             const body = await request.json()
             const { key, name } = body
-    
+
             const data = {
                 key,
                 name,
             }
-        
+
             const newlabel = new Label(data)
-        
+
             // Fetch
             try {
                 // From utils/db.js
                 await connect()
-    
+
                 // Check if label key already exists
                 const existingLabel = await Label.findOne({ key })
-    
+
                 if (existingLabel) {
                     setStatus(400)
                     setResponse({
@@ -105,7 +96,7 @@ export const POST = async (request) => {
                     })
                     return getResponse();
                 }
-    
+
                 await newlabel.save()
 
                 setStatus(200)
@@ -122,7 +113,7 @@ export const POST = async (request) => {
                     status: false,
                     message: "Label record creating error.",
                 })
-    
+
                 return getResponse();
             }
         }

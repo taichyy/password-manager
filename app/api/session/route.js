@@ -1,5 +1,4 @@
 import bcrypt from "bcryptjs";
-import CryptoJS from "crypto-js";
 import { sign } from "jsonwebtoken";
 import { cookies } from "next/headers";
 
@@ -7,50 +6,72 @@ import connect from "@/lib/db"
 import User from "@/models/User";
 import { Response, MAX_AGE } from "@/lib/utils"
 import { getUserId } from "@/lib/actions";
+import { requireEnv } from "@/lib/env";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { hashUsername, decryptPII } from "@/lib/crypto-server";
+
+// A bcrypt hash of a throwaway value, used to spend roughly the same time
+// comparing a password when the user doesn't exist — so response timing can't
+// be used to enumerate valid usernames.
+const DUMMY_HASH = "$2b$12$YnNttg856EWBrg9c2PF4DOTIySHDlVX0jlH1OlAYzeIAeTTBQJkWy";
 
 // Login
 export const POST = async (request) => {
     await connect();
 
-    const jwtSecret = process.env.JWT_SECRET || "";
-    const secret = process.env.USER_SECRET || "";
+    const jwtSecret = requireEnv("JWT_SECRET");
 
     const { setStatus, setResponse, getResponse } = Response()
 
     const body = await request.json();
     const { username, password } = body;
 
-    const usernameHash = CryptoJS.SHA256(username, secret).toString();
+    if (!username || !password) {
+        setStatus(400);
+        setResponse({
+            status: false,
+            type: "credentials",
+            message: "Username and password are required.",
+            data: null,
+        });
+        return getResponse();
+    }
+
+    // Rate limit by username + client IP to slow brute forcing.
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const limited = await checkRateLimit(`login:${hashUsername(username)}:${ip}`, 10, 15 * 60 * 1000);
+    if (limited) {
+        setStatus(429);
+        setResponse({
+            status: false,
+            type: "rate_limit",
+            message: "Too many attempts. Please try again later.",
+            data: null,
+        });
+        return getResponse();
+    }
 
     try {
-        const user = await User.findOne({ usernameHash });
+        const user = await User.findOne({ usernameHash: hashUsername(username) });
 
-        if (!user) {
+        // Always run a bcrypt comparison (real hash or dummy) so both the
+        // wrong-username and wrong-password paths take a similar amount of
+        // time and return an identical, generic error.
+        const isMatch = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+
+        if (!user || !isMatch) {
             setStatus(401);
             setResponse({
                 status: false,
-                type: "user",
-                message: "User does not exist",
-                data: null,
-            })
-            return getResponse();
-        }
-
-        const isMatch = await bcrypt.compare(password, user.password);
-
-        if (!isMatch) {
-            setStatus(401);
-            setResponse({
-                status: false,
-                type: "password",
-                message: "Password is incorrect",
+                type: "credentials",
+                message: "Username or password is incorrect.",
                 data: null,
             });
             return getResponse();
         }
 
-        const decryptedEmail = CryptoJS.AES.decrypt(user.email, secret).toString(CryptoJS.enc.Utf8);
-        const decryptedUsername = CryptoJS.AES.decrypt(user.usernameEncrypted, secret).toString(CryptoJS.enc.Utf8);
+        const decryptedEmail = user.email ? decryptPII(user.email) : "";
+        const decryptedUsername = decryptPII(user.usernameEncrypted);
 
         // Reset tokenValidAfter so the newly issued token will always pass validation
         await User.findByIdAndUpdate(user._id, { tokenValidAfter: new Date(0) });
@@ -81,8 +102,10 @@ export const POST = async (request) => {
             status: true,
             type: "user",
             message: "Login successful",
+            // Note: the JWT is set as an httpOnly cookie above and is
+            // deliberately NOT returned in the body. Only the vault salt
+            // (needed client-side to derive the encryption key) is returned.
             data: {
-                token,
                 salt: user.salt,
             },
         })

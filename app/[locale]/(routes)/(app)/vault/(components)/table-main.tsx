@@ -1,7 +1,6 @@
 "use client"
 
 import axios from "axios"
-import CryptoJS from "crypto-js"
 import useSWR, { KeyedMutator } from "swr"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
@@ -19,8 +18,9 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import LabelsSelector from "./labels-selector"
+import { poster } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { AESDecrypt, poster } from "@/lib/utils"
+import { encrypt, decrypt } from "@/lib/vault-crypto"
 import { useHideStore } from "@/lib/stores/use-hide"
 import DialogSetKey from "./(dialogs)/dialog-set-key"
 import DialogAccount from "./(dialogs)/dialog-account"
@@ -151,37 +151,46 @@ const CollapsibleArea = ({
     useEffect(() => {
         if (!encryptedAccounts || !insertedKeyVal) return;
 
-        const decrypted = encryptedAccounts.map((record) => ({
-            ...record,
-            title: AESDecrypt(record.title, insertedKeyVal),
-            username: AESDecrypt(record.username, insertedKeyVal),
-            password: AESDecrypt(record.password, insertedKeyVal),
-            remark: record.remark ? AESDecrypt(record.remark, insertedKeyVal) : "",
-        }))
+        let cancelled = false
 
-        const keyIsCorrect = !!(decrypted.find(record => record.type == "validation" && record.username == "validation")) || !keychainId;
-        setKeyCorrect(keyIsCorrect);
+        const run = async () => {
+            const decrypted = await Promise.all(encryptedAccounts.map(async (record) => ({
+                ...record,
+                title: await decrypt(record.title, insertedKeyVal),
+                username: await decrypt(record.username, insertedKeyVal),
+                password: await decrypt(record.password, insertedKeyVal),
+                remark: record.remark ? await decrypt(record.remark, insertedKeyVal) : "",
+            })))
 
-        if (keyIsCorrect) {
-            const validationIndex = decrypted.findIndex(record => record.type === "validation" && record.username === "validation");
-            if (validationIndex !== -1) {
-                decrypted.splice(validationIndex, 1);
+            if (cancelled) return
+
+            const keyIsCorrect = !!(decrypted.find(record => record.type == "validation" && record.username == "validation")) || !keychainId;
+            setKeyCorrect(keyIsCorrect);
+
+            if (keyIsCorrect) {
+                const validationIndex = decrypted.findIndex(record => record.type === "validation" && record.username === "validation");
+                if (validationIndex !== -1) {
+                    decrypted.splice(validationIndex, 1);
+                }
             }
+
+            const usedLabels = keyIsCorrect ? Array.from(new Set(decrypted.map(record => record.label).flat())) as string[] : [];
+
+            const finalAccounts = keyIsCorrect ? decrypted : []
+            setAccounts(finalAccounts)
+            setFiltered(
+                search
+                    ? finalAccounts.filter(record =>
+                        record.title.toLowerCase().includes(search.toLowerCase()) ||
+                        record.username.toLowerCase().includes(search.toLowerCase())
+                    )
+                    : finalAccounts
+            )
+            setAllUsedLabels(usedLabels)
         }
 
-        const usedLabels = keyIsCorrect ? Array.from(new Set(decrypted.map(record => record.label).flat())) as string[] : [];
-
-        const finalAccounts = keyIsCorrect ? decrypted : []
-        setAccounts(finalAccounts)
-        setFiltered(
-            search
-                ? finalAccounts.filter(record =>
-                    record.title.toLowerCase().includes(search.toLowerCase()) ||
-                    record.username.toLowerCase().includes(search.toLowerCase())
-                )
-                : finalAccounts
-        )
-        setAllUsedLabels(usedLabels)
+        run()
+        return () => { cancelled = true }
     }, [encryptedAccounts, insertedKeyVal])
 
     useEffect(() => {
@@ -244,15 +253,15 @@ const CollapsibleArea = ({
         try {
             const text = await file.text()
             const importData = JSON.parse(text)
-            // 重新加密
-            const encrypted = importData.map((record: any) => ({
+            // 重新加密（使用已驗證的 AES-GCM）
+            const encrypted = await Promise.all(importData.map(async (record: any) => ({
                 ...record,
-                title: CryptoJS.AES.encrypt(record.title, insertedKeyVal).toString(),
-                username: CryptoJS.AES.encrypt(record.username, insertedKeyVal).toString(),
-                password: CryptoJS.AES.encrypt(record.password, insertedKeyVal).toString(),
-                remark: record.remark ? CryptoJS.AES.encrypt(record.remark, insertedKeyVal).toString() : "",
+                title: await encrypt(record.title, insertedKeyVal),
+                username: await encrypt(record.username, insertedKeyVal),
+                password: await encrypt(record.password, insertedKeyVal),
+                remark: record.remark ? await encrypt(record.remark, insertedKeyVal) : "",
                 keychainId: keychainId || null,
-            }))
+            })))
             await axios.post("/api/accounts", encrypted)
             mutate()
             alert("匯入成功！")

@@ -5,7 +5,7 @@ import Account from "@/models/Account"
 import { Response } from "@/lib/utils"
 import Keychain from "@/models/Keychain"
 import { USER_PLAN_LIMITS, isLimited } from "@/lib/limits"
-import { encryptRecord, getUserId, getUserRole, apiProtect } from "@/lib/actions"
+import { getUserId, getUserRole, apiProtect } from "@/lib/actions"
 
 export const POST = async (request) => {
     // ----- General api check.
@@ -76,10 +76,22 @@ export const POST = async (request) => {
         }
     } else if ( !method ) {
         const session = await mongoose.startSession()
-        
-        // POST /api/keychains => create a new keychain
-        // This is encrypted data, by user at client.
-        const { name, derivedKey } = body || {}
+
+        // POST /api/keychains => create a new keychain.
+        // The validation record is encrypted CLIENT-SIDE with the user's key and
+        // sent already-encrypted. The server never sees the key or plaintext,
+        // preserving the zero-knowledge guarantee for custom keychains.
+        const { name, validationRecord } = body || {}
+
+        if (!name || !validationRecord) {
+            setStatus(400)
+            setResponse({
+                status: false,
+                type: "keychain",
+                message: "Keychain name and validation record are required.",
+            })
+            return getResponse()
+        }
 
         // ----- Plan limit check (user role only)
         const role = await getUserRole()
@@ -105,21 +117,19 @@ export const POST = async (request) => {
 
         const newKeyChain = new Keychain(data)
 
-        // Generate a verifying data inside keychain by default, encrypted by derivedKey
-        
-        const obj = {
+        // Build the validation account from the client-encrypted blobs. Server
+        // controls the trusted metadata (type / userId / keychainId); only the
+        // opaque ciphertext fields come from the client.
+        const newAccount = new Account({
             type: "validation",
-            title: "validation",
-            username: "validation",
-            password: "validation",
+            title: validationRecord.title,
+            username: validationRecord.username,
+            password: validationRecord.password,
+            remark: validationRecord.remark || "",
             userId,
             keychainId: newKeyChain._id.toString(),
-        }
-    
-        const encryptedObj = await encryptRecord(obj, derivedKey)
+        })
 
-        const newAccount = new Account(encryptedObj)
-    
         // Fetch
         try {
             session.startTransaction()
